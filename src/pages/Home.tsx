@@ -1,8 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { getPrayerTimes, getCurrentAndNextPrayer, PrayerTime } from "@/lib/prayerTimes";
 import { useAuth } from "@/contexts/AuthContext";
-import { Bell, MapPin, Flame, Star, ChevronRight, Book, Heart } from "lucide-react";
+import {
+  requestNotificationPermission,
+  scheduleDailyReminders,
+  clearReminders,
+  getPermissionStatus,
+} from "@/lib/notifications";
+import { Bell, BellOff, MapPin, Flame, Star, Heart } from "lucide-react";
 
 const dailyTips = [
   { type: "Quran", text: "\"Indeed, with hardship will be ease.\" (Quran 94:6)", icon: "📖" },
@@ -49,6 +55,32 @@ export default function HomePage() {
   const [prayerInfo, setPrayerInfo] = useState(() => getCurrentAndNextPrayer());
   const [time, setTime] = useState(new Date());
   const [todayTip] = useState(() => dailyTips[new Date().getDay() % dailyTips.length]);
+  const [notifStatus, setNotifStatus] = useState<NotificationPermission | "unsupported">(getPermissionStatus());
+  const notifTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Auto-request notifications and schedule reminders
+  useEffect(() => {
+    const init = async () => {
+      const granted = await requestNotificationPermission();
+      setNotifStatus(granted ? "granted" : "denied");
+      if (granted) {
+        clearReminders(notifTimers.current);
+        notifTimers.current = scheduleDailyReminders(prayers);
+      }
+    };
+    init();
+    return () => clearReminders(notifTimers.current);
+  }, []);
+
+  const toggleNotifications = async () => {
+    if (notifStatus === "granted") return; // can't revoke programmatically
+    const granted = await requestNotificationPermission();
+    setNotifStatus(granted ? "granted" : "denied");
+    if (granted) {
+      clearReminders(notifTimers.current);
+      notifTimers.current = scheduleDailyReminders(prayers);
+    }
+  };
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -80,8 +112,18 @@ export default function HomePage() {
                 <span className="text-xs text-muted-foreground">Addis Ababa, Ethiopia 🇪🇹</span>
               </div>
             </div>
-            <button className="w-10 h-10 rounded-xl bg-muted border border-border flex items-center justify-center">
-              <Bell className="w-5 h-5 text-muted-foreground" />
+            <button
+              onClick={toggleNotifications}
+              title={notifStatus === "granted" ? "Notifications ON" : "Enable notifications"}
+              className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-all ${
+                notifStatus === "granted"
+                  ? "bg-gold/20 border-gold/40"
+                  : "bg-muted border-border"
+              }`}
+            >
+              {notifStatus === "granted"
+                ? <Bell className="w-5 h-5 text-gold" />
+                : <BellOff className="w-5 h-5 text-muted-foreground" />}
             </button>
           </div>
 
