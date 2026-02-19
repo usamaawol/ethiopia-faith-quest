@@ -1,0 +1,149 @@
+# Firestore Security Rules for RAMADAN FAITH
+# Deploy these via Firebase Console > Firestore > Rules
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isValidScore(score) {
+      return score is int && score >= 0 && score <= 10000;
+    }
+
+    function notChangingRole() {
+      return !('role' in request.resource.data) ||
+             request.resource.data.role == resource.data.role;
+    }
+
+    // ── Users ─────────────────────────────────────────────────────
+    match /users/{userId} {
+      // Anyone signed in can read leaderboard data
+      allow read: if isSignedIn();
+
+      // Users can only write to their own document, but cannot change role
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && notChangingRole();
+
+      // Only admin can delete users or change roles
+      allow delete: if isAdmin();
+    }
+
+    // ── Quran Challenges ──────────────────────────────────────────
+    match /challenges/{challengeId} {
+      // Users can only read/write their own challenges
+      allow read: if isSignedIn() &&
+        resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.progress is int &&
+        request.resource.data.target is int &&
+        request.resource.data.target >= 1 &&
+        request.resource.data.target <= 604; // Max pages in Quran
+
+      allow update: if isSignedIn() &&
+        resource.data.userId == request.auth.uid &&
+        // Progress can only increase or stay same (no cheating)
+        request.resource.data.progress >= resource.data.progress &&
+        request.resource.data.progress <= resource.data.target;
+
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // ── Prayer Tracking ───────────────────────────────────────────
+    match /prayerTracking/{docId} {
+      allow read, write: if isSignedIn() &&
+        resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid;
+    }
+
+    // ── Azkar Completion ──────────────────────────────────────────
+    match /azkarCompletion/{docId} {
+      allow read: if isSignedIn() &&
+        resource.data.userId == request.auth.uid;
+
+      allow write: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid;
+    }
+
+    // ── Community Posts ───────────────────────────────────────────
+    match /communityPosts/{postId} {
+      // All authenticated users can read
+      allow read: if isSignedIn();
+
+      // Users can create their own posts
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.content is string &&
+        request.resource.data.content.size() > 0 &&
+        request.resource.data.content.size() <= 500;
+
+      // Users can update own posts (likes/replies by anyone)
+      // Admin can pin/unpin
+      allow update: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin() ||
+        // Allow like/unlike by any signed-in user
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']))
+      );
+
+      // Only post owner or admin can delete
+      allow delete: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+    }
+
+    // ── Admin Posts / Announcements ───────────────────────────────
+    match /adminPosts/{postId} {
+      // All signed-in users can read announcements
+      allow read: if isSignedIn();
+
+      // Only admins can write
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── Islamic Tips ──────────────────────────────────────────────
+    match /tips/{tipId} {
+      // All signed-in users can read tips
+      allow read: if isSignedIn();
+
+      // Only admins can manage tips
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── Score Submissions (server-side validation) ────────────────
+    match /scoreSubmissions/{submissionId} {
+      allow read: if isSignedIn() &&
+        resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        isValidScore(request.resource.data.points) &&
+        // Prevent duplicate submissions by checking type+date
+        request.resource.data.date is string;
+
+      // No updates or deletes on submissions (immutable audit trail)
+      allow update, delete: if isAdmin();
+    }
+
+    // ── Default: deny everything else ────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
