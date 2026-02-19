@@ -1,82 +1,114 @@
 import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { db } from "@/lib/firebase";
 import { collection, query, orderBy, limit, getDocs } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
-import { Trophy, Crown, Flame, Star } from "lucide-react";
+import { Trophy, Crown, Flame, Star, Share2, Copy, Check } from "lucide-react";
 
 interface LeaderboardUser {
   uid: string;
   name: string;
   totalScore: number;
   weeklyScore: number;
-  streakData: { total: number };
+  streakData: { total: number; quran: number; azkar: number };
   badges: string[];
   rank?: number;
 }
 
 function RankBadge({ rank }: { rank: number }) {
   if (rank === 1) return <Crown className="w-5 h-5 text-yellow-400" />;
-  if (rank === 2) return <span className="font-bold text-slate-400 text-sm">🥈</span>;
-  if (rank === 3) return <span className="font-bold text-amber-600 text-sm">🥉</span>;
-  return <span className="text-muted-foreground text-xs font-bold">#{rank}</span>;
+  if (rank === 2) return <span className="text-lg">🥈</span>;
+  if (rank === 3) return <span className="text-lg">🥉</span>;
+  return <span className="text-muted-foreground text-sm font-bold">#{rank}</span>;
+}
+
+function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" | "lg" }) {
+  const sizeClass = size === "lg" ? "w-16 h-16 text-2xl" : size === "sm" ? "w-9 h-9 text-sm" : "w-11 h-11 text-base";
+  return (
+    <div className={`${sizeClass} rounded-full gradient-gold flex items-center justify-center text-primary-foreground font-bold shadow-gold shrink-0`}>
+      {name?.charAt(0)?.toUpperCase() || "?"}
+    </div>
+  );
 }
 
 function LeaderRow({ user, rank, isMe }: { user: LeaderboardUser; rank: number; isMe: boolean }) {
-  const isTop3 = rank <= 3;
-  
+  const bgClass =
+    rank === 1 ? "bg-gradient-to-r from-yellow-900/50 to-yellow-800/20 border-yellow-600/40 shadow-gold" :
+    rank === 2 ? "bg-gradient-to-r from-slate-700/50 to-slate-600/20 border-slate-500/40" :
+    rank === 3 ? "bg-gradient-to-r from-amber-900/50 to-amber-800/20 border-amber-700/40" :
+    isMe ? "bg-gold/10 border-gold/40 shadow-gold" :
+    "gradient-card border-border";
+
   return (
     <motion.div
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: rank * 0.04 }}
-      className={`flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all ${
-        rank === 1
-          ? "gradient-rank1 border-yellow-600/30 shadow-gold"
-          : rank === 2
-          ? "gradient-rank2 bg-opacity-10 border-slate-600/30"
-          : rank === 3
-          ? "gradient-rank3 bg-opacity-10 border-amber-800/30"
-          : isMe
-          ? "bg-gold/10 border-gold-dim shadow-gold"
-          : "gradient-card border-border"
-      }`}
+      transition={{ delay: Math.min(rank * 0.04, 0.5) }}
+      className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl border transition-all ${bgClass}`}
     >
-      <div className="w-8 flex items-center justify-center shrink-0">
+      {/* Rank */}
+      <div className="w-9 flex items-center justify-center shrink-0">
         <RankBadge rank={rank} />
       </div>
 
-      <div className="w-10 h-10 rounded-full gradient-gold flex items-center justify-center text-primary-foreground font-bold text-sm shrink-0 shadow-gold">
-        {user.name?.charAt(0)?.toUpperCase() || "?"}
-      </div>
+      {/* Avatar */}
+      <Avatar name={user.name} size="sm" />
 
+      {/* Info */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1">
-          <p className={`text-sm font-semibold truncate ${rank <= 3 ? "text-foreground" : isMe ? "text-gold" : "text-foreground"}`}>
+        <div className="flex items-center gap-1.5">
+          <p className={`text-sm font-bold truncate ${isMe ? "text-gold" : "text-foreground"}`}>
             {user.name || "Anonymous"}
-            {isMe && <span className="ml-1 text-xs text-gold">(You)</span>}
           </p>
+          {isMe && <span className="text-xs bg-gold/20 text-gold px-1.5 py-0.5 rounded-full shrink-0">You</span>}
+          {rank === 1 && <Crown className="w-3 h-3 text-yellow-400 shrink-0" />}
         </div>
-        <div className="flex items-center gap-2 mt-0.5">
-          {user.streakData?.total > 0 && (
+        <div className="flex items-center gap-3 mt-0.5">
+          {(user.streakData?.total || 0) > 0 && (
             <span className="text-xs text-muted-foreground flex items-center gap-1">
               <Flame className="w-3 h-3 text-orange-400" />
-              {user.streakData.total}d streak
+              {user.streakData.total}d
             </span>
           )}
-          {user.badges?.length > 0 && (
-            <span className="text-xs text-gold">{user.badges.length} badges</span>
+          {(user.streakData?.quran || 0) > 0 && (
+            <span className="text-xs text-muted-foreground">📖 {user.streakData.quran}d</span>
+          )}
+          {(user.badges?.length || 0) > 0 && (
+            <span className="text-xs text-gold">🏅 {user.badges.length}</span>
           )}
         </div>
       </div>
 
+      {/* Score */}
       <div className="text-right shrink-0">
-        <p className={`font-bold text-sm ${rank <= 3 ? "text-foreground" : "text-gold"}`}>
-          {user.totalScore.toLocaleString()}
+        <p className={`font-bold text-base ${rank <= 3 || isMe ? "text-gold" : "text-foreground"}`}>
+          {(user.totalScore || 0).toLocaleString()}
         </p>
         <p className="text-xs text-muted-foreground">SAS pts</p>
       </div>
     </motion.div>
+  );
+}
+
+function PodiumBlock({ user, rank }: { user: LeaderboardUser; rank: number }) {
+  const heights = { 1: "h-24", 2: "h-16", 3: "h-12" };
+  const labels: Record<number, string> = { 1: "👑", 2: "🥈", 3: "🥉" };
+  const isFirst = rank === 1;
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      {isFirst && <Crown className="w-7 h-7 text-yellow-400 mb-1" />}
+      <Avatar name={user.name} size={isFirst ? "lg" : "md"} />
+      <p className="text-xs font-bold text-foreground truncate max-w-[70px] text-center">
+        {user.name?.split(" ")[0] || "—"}
+      </p>
+      <p className="text-xs text-gold font-semibold">{user.totalScore.toLocaleString()}</p>
+      <div className={`${heights[rank as 1|2|3]} w-16 rounded-t-xl flex items-start justify-center pt-2 ${
+        rank === 1 ? "gradient-gold shadow-gold" : rank === 2 ? "bg-slate-600/50" : "bg-amber-900/40"
+      }`}>
+        <span className="text-xl">{labels[rank]}</span>
+      </div>
+    </div>
   );
 }
 
@@ -86,32 +118,43 @@ export default function LeaderboardPage() {
   const [users, setUsers] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [myRank, setMyRank] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     loadLeaderboard();
-  }, [tab]);
+  }, [tab, user]);
 
   const loadLeaderboard = async () => {
     setLoading(true);
     try {
-      const q = query(
-        collection(db, "users"),
-        orderBy("totalScore", "desc"),
-        limit(50)
-      );
+      const q = query(collection(db, "users"), orderBy("totalScore", "desc"), limit(50));
       const snap = await getDocs(q);
       const data: LeaderboardUser[] = snap.docs.map((d, i) => ({
         ...(d.data() as LeaderboardUser),
         rank: i + 1,
       }));
       setUsers(data);
-
       const rank = data.findIndex((u) => u.uid === user?.uid);
       setMyRank(rank >= 0 ? rank + 1 : null);
     } catch (err) {
-      console.error("Failed to load leaderboard:", err);
+      console.error("Leaderboard load error:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const inviteLink = `https://ramadanfaith.app?ref=${user?.uid?.slice(0, 8) || "share"}`;
+
+  const handleShare = async () => {
+    const text = `🌙 Join me on RAMADAN FAITH – Build Your Akhirah!\nTrack Quran, Azkar & compete on Ethiopia's leaderboard.\n${inviteLink}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "Ramadan Faith", text, url: inviteLink });
+      } catch (_) {}
+    } else {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
     }
   };
 
@@ -141,7 +184,7 @@ export default function LeaderboardPage() {
             <button
               key={id}
               onClick={() => setTab(id)}
-              className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${
+              className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${
                 tab === id ? "gradient-gold text-primary-foreground shadow-gold" : "text-muted-foreground"
               }`}
             >
@@ -150,18 +193,20 @@ export default function LeaderboardPage() {
           ))}
         </div>
 
-        {/* SAS Points Info */}
+        {/* SAS Points mini info */}
         <div className="gradient-card rounded-xl border border-border p-3 mb-4">
-          <p className="text-xs text-muted-foreground text-center mb-2 font-semibold">Spiritual Activity Score (SAS)</p>
-          <div className="grid grid-cols-3 gap-2 text-center">
+          <p className="text-xs text-muted-foreground text-center mb-2 font-semibold">How to earn SAS Points</p>
+          <div className="grid grid-cols-4 gap-1.5 text-center">
             {[
-              { label: "Daily Quran", pts: "+50" },
-              { label: "Morning Azkar", pts: "+20" },
-              { label: "5 Salah", pts: "+40" },
+              { label: "Quran", pts: "+50", icon: "📖" },
+              { label: "Morn. Azkar", pts: "+20", icon: "🌅" },
+              { label: "5 Salah", pts: "+40", icon: "🕌" },
+              { label: "7d Streak", pts: "+50", icon: "🔥" },
             ].map((s) => (
-              <div key={s.label} className="bg-muted rounded-lg py-2">
+              <div key={s.label} className="bg-muted rounded-xl py-2 px-1">
+                <p className="text-base">{s.icon}</p>
                 <p className="text-gold font-bold text-xs">{s.pts}</p>
-                <p className="text-muted-foreground text-xs leading-tight">{s.label}</p>
+                <p className="text-muted-foreground text-[10px] leading-tight">{s.label}</p>
               </div>
             ))}
           </div>
@@ -171,75 +216,42 @@ export default function LeaderboardPage() {
       <div className="px-4 space-y-3">
         {/* My Rank Banner */}
         {myRank && (
-          <div className="bg-gold/10 border border-gold-dim rounded-2xl p-3 flex items-center justify-between">
+          <div className="bg-gold/10 border border-gold/40 rounded-2xl p-3.5 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Star className="w-4 h-4 text-gold" />
-              <span className="text-sm font-semibold text-foreground">Your rank</span>
+              <Star className="w-5 h-5 text-gold" />
+              <div>
+                <p className="text-sm font-bold text-foreground">Your Rank</p>
+                <p className="text-xs text-muted-foreground">{profile?.totalScore || 0} SAS pts</p>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="text-gold font-bold">#{myRank}</span>
-              <span className="text-muted-foreground text-sm">{profile?.totalScore || 0} pts</span>
+            <div className="text-right">
+              <p className="text-2xl font-bold text-gold">#{myRank}</p>
+              {profile?.streakData?.total ? (
+                <p className="text-xs text-muted-foreground flex items-center justify-end gap-1">
+                  <Flame className="w-3 h-3 text-orange-400" />{profile.streakData.total}d streak
+                </p>
+              ) : null}
             </div>
           </div>
         )}
 
+        {/* Loading */}
         {loading ? (
           <div className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="gradient-card rounded-2xl border border-border p-4 animate-pulse">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-muted rounded-full" />
-                  <div className="w-10 h-10 bg-muted rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <div className="h-3 bg-muted rounded w-1/2" />
-                    <div className="h-2 bg-muted rounded w-1/3" />
-                  </div>
-                </div>
-              </div>
+              <div key={i} className="gradient-card rounded-2xl border border-border p-4 animate-pulse h-16" />
             ))}
           </div>
         ) : tab === "national" ? (
           <>
-            {/* Top 3 Podium */}
-            {top3.length > 0 && (
-              <div className="gradient-card rounded-2xl border border-gold-dim shadow-card p-4 mb-2">
-                <p className="text-xs text-center text-gold font-semibold mb-3">🏆 Promotion Zone</p>
+            {/* Podium */}
+            {top3.length >= 2 && (
+              <div className="gradient-card rounded-2xl border border-gold/30 shadow-card p-5 mb-2">
+                <p className="text-xs text-center text-gold font-bold mb-4 tracking-widest uppercase">🏆 Promotion Zone</p>
                 <div className="flex items-end justify-center gap-4">
-                  {top3[1] && (
-                    <div className="text-center flex flex-col items-center">
-                      <div className="w-12 h-12 rounded-full gradient-gold flex items-center justify-center text-primary-foreground font-bold shadow-gold mb-1">
-                        {top3[1].name?.charAt(0)?.toUpperCase()}
-                      </div>
-                      <div className="bg-slate-700/50 rounded-t-xl w-16 h-16 flex flex-col items-center justify-center">
-                        <span className="text-lg">🥈</span>
-                        <p className="text-xs text-muted-foreground truncate w-full text-center px-1">{top3[1].name?.split(" ")[0]}</p>
-                      </div>
-                    </div>
-                  )}
-                  {top3[0] && (
-                    <div className="text-center flex flex-col items-center">
-                      <Crown className="w-6 h-6 text-yellow-400 mb-1" />
-                      <div className="w-14 h-14 rounded-full gradient-gold flex items-center justify-center text-primary-foreground font-bold text-lg shadow-gold mb-1 ring-2 ring-yellow-400">
-                        {top3[0].name?.charAt(0)?.toUpperCase()}
-                      </div>
-                      <div className="gradient-gold rounded-t-xl w-16 h-20 flex flex-col items-center justify-center shadow-gold">
-                        <span className="text-xl">👑</span>
-                        <p className="text-xs text-primary-foreground truncate w-full text-center px-1 font-bold">{top3[0].name?.split(" ")[0]}</p>
-                        <p className="text-xs text-primary-foreground/80">{top3[0].totalScore}</p>
-                      </div>
-                    </div>
-                  )}
-                  {top3[2] && (
-                    <div className="text-center flex flex-col items-center">
-                      <div className="w-12 h-12 rounded-full gradient-gold flex items-center justify-center text-primary-foreground font-bold shadow-gold mb-1">
-                        {top3[2].name?.charAt(0)?.toUpperCase()}
-                      </div>
-                      <div className="bg-amber-900/30 rounded-t-xl w-16 h-12 flex flex-col items-center justify-center">
-                        <span className="text-lg">🥉</span>
-                        <p className="text-xs text-muted-foreground truncate w-full text-center px-1">{top3[2].name?.split(" ")[0]}</p>
-                      </div>
-                    </div>
-                  )}
+                  {top3[1] && <PodiumBlock user={top3[1]} rank={2} />}
+                  {top3[0] && <PodiumBlock user={top3[0]} rank={1} />}
+                  {top3[2] && <PodiumBlock user={top3[2]} rank={3} />}
                 </div>
               </div>
             )}
@@ -247,27 +259,71 @@ export default function LeaderboardPage() {
             {/* All Ranks */}
             <div className="space-y-2">
               {users.map((u, i) => (
-                <LeaderRow
-                  key={u.uid}
-                  user={u}
-                  rank={i + 1}
-                  isMe={u.uid === user?.uid}
-                />
+                <LeaderRow key={u.uid} user={u} rank={i + 1} isMe={u.uid === user?.uid} />
               ))}
               {users.length === 0 && (
-                <div className="text-center py-12">
-                  <p className="text-4xl mb-3">🌙</p>
-                  <p className="text-muted-foreground">Be the first to join the leaderboard!</p>
-                  <p className="text-xs text-muted-foreground mt-1">Complete daily goals to earn SAS points</p>
+                <div className="text-center py-16">
+                  <p className="text-5xl mb-4">🌙</p>
+                  <p className="text-foreground font-semibold text-lg">Be the first!</p>
+                  <p className="text-muted-foreground text-sm mt-1">Complete daily goals to earn SAS points</p>
                 </div>
               )}
             </div>
           </>
         ) : (
-          <div className="text-center py-12">
-            <p className="text-4xl mb-3">👥</p>
-            <p className="text-foreground font-semibold">Friends Leaderboard</p>
-            <p className="text-muted-foreground text-sm mt-1">Coming soon — invite friends to compete!</p>
+          /* Friends Tab */
+          <div className="space-y-4">
+            <div className="gradient-card rounded-2xl border border-border shadow-card p-6 text-center">
+              <div className="w-16 h-16 gradient-gold rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-gold">
+                <Share2 className="w-8 h-8 text-primary-foreground" />
+              </div>
+              <h2 className="font-bold text-foreground text-lg mb-2">Invite Friends & Earn!</h2>
+              <p className="text-muted-foreground text-sm mb-1">Share your invite link.</p>
+              <p className="text-gold font-semibold text-sm mb-5">
+                🎁 +30 SAS Points for every friend who joins!
+              </p>
+
+              {/* Invite link */}
+              <div className="bg-muted rounded-xl p-3 mb-4 text-left">
+                <p className="text-xs text-muted-foreground mb-1">Your invite link</p>
+                <p className="text-xs text-gold font-mono break-all">{inviteLink}</p>
+              </div>
+
+              <button
+                onClick={handleShare}
+                className="w-full py-3.5 gradient-gold text-primary-foreground rounded-xl font-bold shadow-gold flex items-center justify-center gap-2 active:scale-95 transition-transform"
+              >
+                {copied ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
+                {copied ? "Copied to clipboard!" : "Share Invite Link"}
+              </button>
+
+              {copied && (
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-gold text-xs mt-2"
+                >
+                  Link copied! Share it with friends 🎉
+                </motion.p>
+              )}
+            </div>
+
+            {/* How it works */}
+            <div className="gradient-card rounded-2xl border border-border p-4 space-y-3">
+              <h3 className="font-semibold text-foreground text-sm">How it works</h3>
+              {[
+                { step: "1", text: "Share your unique invite link" },
+                { step: "2", text: "Friend signs up using your link" },
+                { step: "3", text: "You both get +30 SAS Points!" },
+              ].map(({ step, text }) => (
+                <div key={step} className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-full gradient-gold flex items-center justify-center text-primary-foreground font-bold text-xs shrink-0">
+                    {step}
+                  </div>
+                  <p className="text-sm text-foreground">{text}</p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
