@@ -55,7 +55,7 @@ async function createUserProfile(user: User, name?: string): Promise<UserProfile
     streakData: { quran: 0, azkar: 0, salah: 0, total: 0 },
     badges: [],
     createdAt: serverTimestamp(),
-    photoURL: user.photoURL || undefined,
+    ...(user.photoURL ? { photoURL: user.photoURL } : {}),
   };
   await setDoc(doc(db, "users", user.uid), profile, { merge: true });
   return profile;
@@ -80,9 +80,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
-      if (u) await loadProfile(u);
-      else setProfile(null);
-      setLoading(false);
+      try {
+        if (u) await loadProfile(u);
+        else setProfile(null);
+      } catch (err) {
+        console.error("Failed to load profile:", err);
+        setProfile(null);
+      } finally {
+        setLoading(false);
+      }
     });
     return unsub;
   }, []);
